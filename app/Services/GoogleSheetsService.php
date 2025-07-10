@@ -26,7 +26,11 @@ class GoogleSheetsService
         $this->client = new Client();
         $this->client->setApplicationName(config('services.google.application_name'));
         $this->client->setScopes([Sheets::SPREADSHEETS]);
-        $this->client->setAuthConfig(storage_path('app/google/service-account.json'));
+        if (env('GOOGLE_SERVICE_ACCOUNT_JSON')) {
+            $this->client->setAuthConfig(json_decode(env('GOOGLE_SERVICE_ACCOUNT_JSON'), true));
+        } else {
+            $this->client->setAuthConfig(storage_path('app/google/service-account.json'));
+        }
         $this->client->setAccessType('offline');
 
         $this->service = new Sheets($this->client);
