@@ -94,6 +94,9 @@ class SpreadsheetCrawlerService
 
         $this->output("   🔍 행 {$config['start_row']}~{$config['end_row']} 처리 시작");
 
+        $consecutiveEmptyRows = 0;
+        $maxConsecutiveEmpty = 3; // 연속 3개 빈 행이면 시트 종료
+
         for ($row = $config['start_row']; $row <= $config['end_row']; $row++) {
             $this->output("      ⚙️  행 {$row} 처리 중...");
 
@@ -102,22 +105,36 @@ class SpreadsheetCrawlerService
                 $results['details'][$row] = $rowResult;
                 $results['processed']++;
 
-                if ($rowResult['updated']) {
-                    $results['updated']++;
-                    if (isset($rowResult['damage'])) {
-                        $unit = $rowResult['unit'] ?? '';
-                        $this->output("      ✅ 행 {$row} 완료 - 딜량: {$rowResult['damage']}{$unit}");
-                    } else {
-                        $this->output("      ⚠️  행 {$row} 실패 - " . ($rowResult['reason'] ?? '알 수 없는 오류'));
+                // URL이 없는 경우 체크
+                if (isset($rowResult['skipped']) && $rowResult['skipped']) {
+                    $consecutiveEmptyRows++;
+                    $this->output("      ⏭️  행 {$row} 건너뛰기 - " . ($rowResult['reason'] ?? 'URL 없음'));
+
+                    // 연속으로 빈 행이 나오면 시트 종료
+                    if ($consecutiveEmptyRows >= $maxConsecutiveEmpty) {
+                        $this->output("      🛑 연속 {$maxConsecutiveEmpty}개 빈 행 발견, 시트 '{$sheetName}' 처리 종료", 'comment');
+                        break;
                     }
                 } else {
-                    $this->output("      ⏭️  행 {$row} 건너뛰기 - " . ($rowResult['reason'] ?? 'URL 없음'));
+                    // URL이 있었으면 연속 카운트 리셋
+                    $consecutiveEmptyRows = 0;
+
+                    if ($rowResult['updated']) {
+                        $results['updated']++;
+                        if (isset($rowResult['damage'])) {
+                            $unit = $rowResult['unit'] ?? '';
+                            $this->output("      ✅ 행 {$row} 완료 - 딜량: {$rowResult['damage']}{$unit}");
+                        } else {
+                            $this->output("      ⚠️  행 {$row} 실패 - " . ($rowResult['reason'] ?? '알 수 없는 오류'));
+                        }
+                    }
                 }
 
                 // 행 간 대기
                 sleep(1);
 
             } catch (Exception $e) {
+                $consecutiveEmptyRows = 0; // 에러도 빈 행으로 치지 않음
                 $this->output("      ❌ 행 {$row} 처리 실패: " . $e->getMessage(), 'error');
 
                 $results['details'][$row] = [
