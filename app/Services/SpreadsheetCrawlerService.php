@@ -9,6 +9,7 @@ class SpreadsheetCrawlerService
 {
     private $sheetsService;
     private $crawlerService;
+    private $console;
 
     public function __construct(
         GoogleSheetsService $sheetsService,
@@ -16,6 +17,26 @@ class SpreadsheetCrawlerService
     ) {
         $this->sheetsService = $sheetsService;
         $this->crawlerService = $crawlerService;
+    }
+
+    public function setConsole($console): void
+    {
+        $this->console = $console;
+        // 크롤러 서비스에도 전달
+        $this->crawlerService->setConsole($console);
+    }
+
+    // 출력용 헬퍼 메서드
+    private function output(string $message, string $type = 'info'): void
+    {
+        if ($this->console) {
+            match($type) {
+                'error' => $this->console->error($message),
+                'warn' => $this->console->warn($message),
+                'comment' => $this->console->comment($message),
+                default => $this->console->line($message)
+            };
+        }
     }
 
     /**
@@ -26,32 +47,26 @@ class SpreadsheetCrawlerService
         $results = [];
         $sheetNames = config('crawler.sheet_names', []);
 
-        Log::info("다중 시트 크롤링 시작", ['sheets' => $sheetNames]);
+        $this->output("📚 다중 시트 크롤링 시작 - 시트: " . implode(', ', $sheetNames));
 
         foreach ($sheetNames as $index => $sheetName) {
-            Log::info("시트 처리 시작", [
-                'sheet' => $sheetName,
-                'index' => $index + 1,
-                'total' => count($sheetNames)
-            ]);
+            $this->output("📄 시트 '{$sheetName}' 처리 시작 (" . ($index + 1) . "/" . count($sheetNames) . ")");
 
             try {
                 $sheetResult = $this->crawlSingleSheet($sheetName);
                 $results[$sheetName] = $sheetResult;
-                
-                Log::info("시트 크롤링 완료", ['sheet' => $sheetName]);
+
+                $this->output("✅ 시트 '{$sheetName}' 크롤링 완료!", 'comment');
 
                 // 시트 간 대기
                 if ($index < count($sheetNames) - 1) {
+                    $this->output("⏳ 다음 시트까지 3초 대기...", 'comment');
                     sleep(3);
                 }
-                
+
             } catch (Exception $e) {
-                Log::error("시트 크롤링 실패", [
-                    'sheet' => $sheetName,
-                    'error' => $e->getMessage()
-                ]);
-                
+                $this->output("❌ 시트 '{$sheetName}' 크롤링 실패: " . $e->getMessage(), 'error');
+
                 $results[$sheetName] = [
                     'success' => false,
                     'error' => $e->getMessage()
@@ -59,7 +74,7 @@ class SpreadsheetCrawlerService
             }
         }
 
-        Log::info("모든 시트 크롤링 완료", ['results' => $results]);
+        $this->output("🎉 모든 시트 크롤링 완료!");
         return $results;
     }
 
@@ -77,8 +92,10 @@ class SpreadsheetCrawlerService
             'details' => []
         ];
 
+        $this->output("   🔍 행 {$config['start_row']}~{$config['end_row']} 처리 시작");
+
         for ($row = $config['start_row']; $row <= $config['end_row']; $row++) {
-            Log::info("행 처리 시작", ['sheet' => $sheetName, 'row' => $row]);
+            $this->output("      ⚙️  행 {$row} 처리 중...");
 
             try {
                 $rowResult = $this->processRow($sheetName, $row, $config);
@@ -87,19 +104,21 @@ class SpreadsheetCrawlerService
 
                 if ($rowResult['updated']) {
                     $results['updated']++;
+                    if (isset($rowResult['damage'])) {
+                        $unit = $rowResult['unit'] ?? '';
+                        $this->output("      ✅ 행 {$row} 완료 - 딜량: {$rowResult['damage']}{$unit}");
+                    } else {
+                        $this->output("      ⚠️  행 {$row} 실패 - " . ($rowResult['reason'] ?? '알 수 없는 오류'));
+                    }
                 } else {
-                    $results['failed']++;
+                    $this->output("      ⏭️  행 {$row} 건너뛰기 - " . ($rowResult['reason'] ?? 'URL 없음'));
                 }
 
                 // 행 간 대기
                 sleep(1);
 
             } catch (Exception $e) {
-                Log::error("행 처리 실패", [
-                    'sheet' => $sheetName,
-                    'row' => $row,
-                    'error' => $e->getMessage()
-                ]);
+                $this->output("      ❌ 행 {$row} 처리 실패: " . $e->getMessage(), 'error');
 
                 $results['details'][$row] = [
                     'success' => false,
@@ -129,16 +148,8 @@ class SpreadsheetCrawlerService
         $url = isset($urlData[0][0]) ? trim($urlData[0][0]) : '';
         $role = isset($roleData[0][0]) ? trim($roleData[0][0]) : '';
 
-        Log::info("행 데이터 읽기 완료", [
-            'sheet' => $sheetName,
-            'row' => $row,
-            'url' => $url,
-            'role' => $role
-        ]);
-
         // URL이 비어있으면 건너뛰기
         if (empty($url)) {
-            Log::info("URL 없음 - 건너뛰기", ['sheet' => $sheetName, 'row' => $row]);
             return [
                 'success' => true,
                 'skipped' => true,
@@ -150,10 +161,10 @@ class SpreadsheetCrawlerService
         try {
             // 웹 크롤링
             $html = $this->crawlerService->crawlUrl($url);
-            
+
             // 딜량 데이터 추출
             $damageValues = $this->crawlerService->extractDamageData($html);
-            
+
             if (empty($damageValues)) {
                 // 딜량 데이터 없음 - 수집실패 처리
                 $this->handleFailedRow($sheetName, $row, $config);
@@ -166,7 +177,7 @@ class SpreadsheetCrawlerService
 
             // 역할에 따른 딜량 선택
             $result = $this->crawlerService->selectDamageByRole($damageValues, $role);
-            
+
             // 스프레드시트에 결과 쓰기
             $this->updateSheetWithResult($sheetName, $row, $config, $result);
 
@@ -180,7 +191,7 @@ class SpreadsheetCrawlerService
         } catch (Exception $e) {
             // 크롤링 실패 - 수집실패 처리
             $this->handleFailedRow($sheetName, $row, $config);
-            
+
             return [
                 'success' => false,
                 'error' => $e->getMessage(),
@@ -204,12 +215,6 @@ class SpreadsheetCrawlerService
         }
 
         $this->sheetsService->writeCells($sheetName, $updates);
-
-        Log::info("시트 업데이트 완료", [
-            'sheet' => $sheetName,
-            'row' => $row,
-            'updates' => $updates
-        ]);
     }
 
     /**
@@ -225,18 +230,6 @@ class SpreadsheetCrawlerService
         // 기존에 숫자 데이터가 없으면 '수집실패' 기록
         if (empty($existingValue) || !is_numeric($existingValue)) {
             $this->sheetsService->writeCell($sheetName, $damageCell, '수집실패');
-            
-            Log::info("수집실패 기록", [
-                'sheet' => $sheetName,
-                'row' => $row,
-                'cell' => $damageCell
-            ]);
-        } else {
-            Log::info("기존 데이터 유지", [
-                'sheet' => $sheetName,
-                'row' => $row,
-                'existing_value' => $existingValue
-            ]);
         }
     }
 }

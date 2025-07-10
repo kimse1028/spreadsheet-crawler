@@ -1,4 +1,4 @@
-const { chromium } = require('playwright');
+import { chromium } from 'playwright';
 
 async function crawlPage(url, timeout = 60000) {
     let browser;
@@ -22,10 +22,10 @@ async function crawlPage(url, timeout = 60000) {
         });
 
         const page = await context.newPage();
-        
+
         // 타임아웃 설정
         page.setDefaultTimeout(timeout);
-        
+
         // 페이지 로드
         await page.goto(url, {
             waitUntil: 'networkidle',
@@ -37,9 +37,9 @@ async function crawlPage(url, timeout = 60000) {
 
         // HTML 가져오기
         const html = await page.content();
-        
+
         console.log(html);
-        
+
     } catch (error) {
         console.error(`크롤링 오류: ${error.message}`);
         process.exit(1);

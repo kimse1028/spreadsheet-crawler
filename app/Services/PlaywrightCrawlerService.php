@@ -12,6 +12,7 @@ class PlaywrightCrawlerService
     private $timeout;
     private $delay;
     private $minHtmlSize;
+    private $console;
 
     public function __construct()
     {
@@ -21,47 +22,52 @@ class PlaywrightCrawlerService
         $this->minHtmlSize = config('crawler.min_html_size', 760000);
     }
 
+    public function setConsole($console): void
+    {
+        $this->console = $console;
+    }
+
+    // 출력용 헬퍼 메서드
+    private function output(string $message, string $type = 'info'): void
+    {
+        if ($this->console) {
+            match($type) {
+                'error' => $this->console->error($message),
+                'warn' => $this->console->warn($message),
+                'comment' => $this->console->comment($message),
+                default => $this->console->line($message)
+            };
+        }
+    }
+
     /**
      * URL에서 HTML 크롤링
      */
     public function crawlUrl(string $url): string
     {
-        Log::info("크롤링 시작", ['url' => $url]);
+        $this->output("         🌐 URL 크롤링 시작: " . substr($url, 0, 50) . "...");
 
         for ($attempt = 1; $attempt <= $this->retries; $attempt++) {
             try {
-                Log::info("크롤링 시도 {$attempt}/{$this->retries}", ['url' => $url]);
+                $this->output("         🔄 시도 {$attempt}/{$this->retries}");
 
                 $html = $this->fetchHtmlWithPlaywright($url);
-                
+
                 if (strlen($html) >= $this->minHtmlSize) {
-                    Log::info("HTML 크기 충분", [
-                        'url' => $url,
-                        'size' => strlen($html),
-                        'attempt' => $attempt
-                    ]);
+                    $this->output("         ✅ HTML 크기 충분: " . number_format(strlen($html)) . "자");
                     return $html;
                 }
 
-                Log::warning("HTML 크기 부족", [
-                    'url' => $url,
-                    'size' => strlen($html),
-                    'min_size' => $this->minHtmlSize,
-                    'attempt' => $attempt
-                ]);
+                $this->output("         ⚠️  HTML 크기 부족: " . number_format(strlen($html)) . "자 (최소: " . number_format($this->minHtmlSize) . "자)", 'warn');
 
                 if ($attempt < $this->retries) {
                     $waitTime = $this->delay * pow(1.5, $attempt - 1);
-                    Log::info("재시도 대기", ['wait_ms' => $waitTime]);
+                    $this->output("         ⏳ {$waitTime}ms 대기 후 재시도...");
                     usleep($waitTime * 1000);
                 }
 
             } catch (Exception $e) {
-                Log::error("크롤링 오류", [
-                    'url' => $url,
-                    'attempt' => $attempt,
-                    'error' => $e->getMessage()
-                ]);
+                $this->output("         ❌ 크롤링 오류 (시도 {$attempt}): " . $e->getMessage(), 'error');
 
                 if ($attempt < $this->retries) {
                     $waitTime = $this->delay * pow(1.5, $attempt - 1);
@@ -79,7 +85,7 @@ class PlaywrightCrawlerService
     private function fetchHtmlWithPlaywright(string $url): string
     {
         $scriptPath = base_path('scripts/crawler.js');
-        
+
         // Playwright 스크립트 실행
         $process = new Process([
             'node',
@@ -108,13 +114,13 @@ class PlaywrightCrawlerService
      */
     public function extractDamageData(string $html): array
     {
-        Log::info("딜량 데이터 추출 시작", ['html_size' => strlen($html)]);
+        $this->output("         🔍 딜량 데이터 추출 시작 (HTML: " . number_format(strlen($html)) . "자)");
 
         // 7자리 이상 숫자(콤마 포함) 패턴 매칭
         preg_match_all('/>([0-9,]{7,})</', $html, $matches);
 
         if (empty($matches[1])) {
-            Log::warning("딜량 패턴 매치 없음");
+            $this->output("         ⚠️  딜량 패턴 매치 없음", 'warn');
             return [];
         }
 
@@ -126,11 +132,7 @@ class PlaywrightCrawlerService
             }
         }
 
-        Log::info("딜량 데이터 추출 완료", [
-            'matches_count' => count($matches[1]),
-            'valid_numbers' => count($damageValues),
-            'values' => array_slice($damageValues, 0, 3) // 처음 3개만 로그
-        ]);
+        $this->output("         ✅ 딜량 데이터 추출 완료: " . count($damageValues) . "개 발견");
 
         return $damageValues;
     }
@@ -145,11 +147,7 @@ class PlaywrightCrawlerService
         }
 
         $role = trim($role);
-        Log::info("역할별 딜량 선택", [
-            'role' => $role,
-            'damage_count' => count($damageValues),
-            'values' => $damageValues
-        ]);
+        $this->output("         🎯 역할별 딜량 선택: {$role} (" . count($damageValues) . "개 값)");
 
         if (count($damageValues) >= 2) {
             // 두 개 이상의 딜량이 있는 경우
@@ -181,12 +179,7 @@ class PlaywrightCrawlerService
             }
         }
 
-        Log::info("딜량 선택 완료", [
-            'role' => $role,
-            'original_damage' => $selectedDamage,
-            'final_damage' => $finalDamage,
-            'unit' => $unit
-        ]);
+        $this->output("         💯 딜량 선택 완료: " . number_format($selectedDamage) . " → {$finalDamage}{$unit}");
 
         return [
             'damage' => $finalDamage,
