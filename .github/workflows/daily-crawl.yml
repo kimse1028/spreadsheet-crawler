@@ -57,7 +57,7 @@ jobs:
           CRAWLER_TIMEOUT=${{ secrets.CRAWLER_TIMEOUT }}
           CRAWLER_RETRIES=${{ secrets.CRAWLER_RETRIES }}
           CRAWLER_DELAY=${{ secrets.CRAWLER_DELAY }}
-          GOOGLE_APPLICATION_NAME=Spreadsheet Crawler
+          GOOGLE_APPLICATION_NAME="Spreadsheet Crawler"
           CRAWLER_MIN_HTML_SIZE=760000
           EOF
           
