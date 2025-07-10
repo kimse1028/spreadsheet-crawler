@@ -48,16 +48,18 @@ jobs:
         
       - name: Create .env file
         run: |
-          echo "APP_ENV=production" >> .env
-          echo "APP_DEBUG=false" >> .env
-          echo "APP_KEY=${{ secrets.APP_KEY }}" >> .env
-          echo "GOOGLE_SPREADSHEET_ID=${{ secrets.GOOGLE_SPREADSHEET_ID }}" >> .env
-          echo "GOOGLE_SERVICE_ACCOUNT_JSON='${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}'" >> .env
-          echo "CRAWLER_TIMEOUT=${{ secrets.CRAWLER_TIMEOUT }}" >> .env
-          echo "CRAWLER_RETRIES=${{ secrets.CRAWLER_RETRIES }}" >> .env
-          echo "CRAWLER_DELAY=${{ secrets.CRAWLER_DELAY }}" >> .env
-          echo "GOOGLE_APPLICATION_NAME=Spreadsheet Crawler" >> .env
-          echo "CRAWLER_MIN_HTML_SIZE=760000" >> .env
+          cat > .env << 'EOF'
+          APP_ENV=production
+          APP_DEBUG=false
+          APP_KEY=${{ secrets.APP_KEY }}
+          GOOGLE_SPREADSHEET_ID=${{ secrets.GOOGLE_SPREADSHEET_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON='${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}'
+          CRAWLER_TIMEOUT=${{ secrets.CRAWLER_TIMEOUT }}
+          CRAWLER_RETRIES=${{ secrets.CRAWLER_RETRIES }}
+          CRAWLER_DELAY=${{ secrets.CRAWLER_DELAY }}
+          GOOGLE_APPLICATION_NAME=Spreadsheet Crawler
+          CRAWLER_MIN_HTML_SIZE=760000
+          EOF
           
       - name: Generate application key
         run: php artisan key:generate --ansi
