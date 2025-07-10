@@ -61,6 +61,29 @@ jobs:
           CRAWLER_MIN_HTML_SIZE=760000
           EOF
           
+      - name: Create Google service account file
+        run: |
+          mkdir -p storage/app/google
+          echo '${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}' > storage/app/google/service-account.json
+          
+      - name: Debug environment variables
+        run: |
+          echo "Checking if GOOGLE_SERVICE_ACCOUNT_JSON is set..."
+          if [ -n "$GOOGLE_SERVICE_ACCOUNT_JSON" ]; then
+            echo "✅ GOOGLE_SERVICE_ACCOUNT_JSON environment variable is set"
+            echo "First 50 characters: ${GOOGLE_SERVICE_ACCOUNT_JSON:0:50}..."
+          else
+            echo "❌ GOOGLE_SERVICE_ACCOUNT_JSON environment variable is NOT set"
+          fi
+          
+          echo "Checking service account file..."
+          if [ -f "storage/app/google/service-account.json" ]; then
+            echo "✅ Service account file exists"
+            echo "File size: $(wc -c < storage/app/google/service-account.json) bytes"
+          else
+            echo "❌ Service account file does NOT exist"
+          fi
+          
       - name: Generate application key
         run: php artisan key:generate --ansi
         
