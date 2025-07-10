@@ -8,44 +8,44 @@ on:
 jobs:
   crawl:
     runs-on: ubuntu-latest
-
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
+        
       - name: Setup PHP 8.2
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'
           extensions: mbstring, xml, curl, zip, intl, sqlite3
           coverage: none
-
+          
       - name: Setup Node.js 18
         uses: actions/setup-node@v4
         with:
           node-version: '18'
           cache: 'npm'
-
+          
       - name: Get Composer Cache Directory
         id: composer-cache
         run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
-
+        
       - name: Cache Composer dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ${{ steps.composer-cache.outputs.dir }}
           key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
           restore-keys: ${{ runner.os }}-composer-
-
+          
       - name: Install Composer dependencies
         run: composer install --no-dev --optimize-autoloader --no-interaction
-
+        
       - name: Install NPM dependencies
         run: npm ci
-
+        
       - name: Install Playwright browsers
         run: npx playwright install chromium --with-deps
-
+        
       - name: Create .env file
         run: |
           echo "APP_ENV=production" >> .env
@@ -58,21 +58,21 @@ jobs:
           echo "CRAWLER_DELAY=${{ secrets.CRAWLER_DELAY }}" >> .env
           echo "GOOGLE_APPLICATION_NAME=Spreadsheet Crawler" >> .env
           echo "CRAWLER_MIN_HTML_SIZE=760000" >> .env
-
+          
       - name: Generate application key
         run: php artisan key:generate --ansi
-
+        
       - name: Clear and cache config
         run: |
           php artisan config:clear
           php artisan config:cache
-
+          
       - name: Run spreadsheet crawling
         run: php artisan crawl:sheets
-
+        
       - name: Upload logs (if exists)
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: crawl-logs-${{ github.run_number }}
           path: storage/logs/
