@@ -2,7 +2,7 @@ name: Daily Spreadsheet Crawl
 on:
   schedule:
     # UTC 15:00 = 한국시간 00:00 (자정)
-    - cron: '7 15 * * *'
+    - cron: '9 0 * * *'
   workflow_dispatch:  # 수동 실행도 가능
 
 jobs:
