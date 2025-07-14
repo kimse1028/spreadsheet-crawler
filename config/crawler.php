@@ -34,5 +34,56 @@ return [
         '이윤찬',
         '김도연'
         // 필요한 시트 이름들 추가
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Server Mapping Configuration
+    |--------------------------------------------------------------------------
+    |
+    | 한글 서버명을 API 서버 ID로 매핑
+    |
+    */
+    'server_mapping' => [
+        '안톤' => 'anton',
+        '바칼' => 'bakal',
+        '카인' => 'cain',
+        '카시야스' => 'casillas',
+        '디레지에' => 'diregie',
+        '힐더' => 'hilder',
+        '프레이' => 'prey',
+        '시로코' => 'siroco'
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Neople API Configuration
+    |--------------------------------------------------------------------------
+    |
+    | 네오플 던전앤파이터 API 설정
+    |
+    */
+    'neople_api' => [
+        'base_url' => env('DFO_API_BASE_URL', 'https://api.neople.co.kr'),
+        'api_key' => env('DFO_API_KEY'),
+        'version' => env('DFO_API_VERSION', 'df'),
+        'endpoints' => [
+            'character_search' => '/df/servers/{serverId}/characters',
+            'character_timeline' => '/df/servers/{serverId}/characters/{characterId}/timeline'
+        ]
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Character Configuration
+    |--------------------------------------------------------------------------
+    |
+    | 캐릭터 관련 설정
+    |
+    */
+    'character' => [
+        'server_cell' => 'B3',
+        'name_start_row' => 7,
+        'name_column' => 'B'
     ]
 ];

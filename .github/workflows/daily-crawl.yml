@@ -1,4 +1,4 @@
-name: Daily Spreadsheet Crawl
+name: Daily Spreadsheet Crawl & Raid Check
 on:
   schedule:
     # 00:00 (자정)
@@ -6,46 +6,46 @@ on:
   workflow_dispatch:  # 수동 실행도 가능
 
 jobs:
-  crawl:
+  crawl-and-raid-check:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        
+
       - name: Setup PHP 8.2
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'
           extensions: mbstring, xml, curl, zip, intl, sqlite3
           coverage: none
-          
+
       - name: Setup Node.js 18
         uses: actions/setup-node@v4
         with:
           node-version: '18'
           cache: 'npm'
-          
+
       - name: Get Composer Cache Directory
         id: composer-cache
         run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
-        
+
       - name: Cache Composer dependencies
         uses: actions/cache@v4
         with:
           path: ${{ steps.composer-cache.outputs.dir }}
           key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
           restore-keys: ${{ runner.os }}-composer-
-          
+
       - name: Install Composer dependencies
         run: composer install --no-dev --optimize-autoloader --no-interaction
-        
+
       - name: Install NPM dependencies
         run: npm ci
-        
+
       - name: Install Playwright browsers
         run: npx playwright install chromium --with-deps
-        
+
       - name: Create .env file
         run: |
           cat > .env << 'EOF'
@@ -54,18 +54,19 @@ jobs:
           APP_KEY=${{ secrets.APP_KEY }}
           GOOGLE_SPREADSHEET_ID=${{ secrets.GOOGLE_SPREADSHEET_ID }}
           GOOGLE_SERVICE_ACCOUNT_JSON='${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}'
+          NEOPLE_API_KEY=${{ secrets.NEOPLE_API_KEY }}
           CRAWLER_TIMEOUT=${{ secrets.CRAWLER_TIMEOUT }}
           CRAWLER_RETRIES=${{ secrets.CRAWLER_RETRIES }}
           CRAWLER_DELAY=${{ secrets.CRAWLER_DELAY }}
           GOOGLE_APPLICATION_NAME="Spreadsheet Crawler"
           CRAWLER_MIN_HTML_SIZE=760000
           EOF
-          
+
       - name: Create Google service account file
         run: |
           mkdir -p storage/app/google
           echo '${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}' > storage/app/google/service-account.json
-          
+
       - name: Debug environment variables
         run: |
           echo "Checking if GOOGLE_SERVICE_ACCOUNT_JSON is set..."
@@ -75,7 +76,7 @@ jobs:
           else
             echo "❌ GOOGLE_SERVICE_ACCOUNT_JSON environment variable is NOT set"
           fi
-          
+
           echo "Checking service account file..."
           if [ -f "storage/app/google/service-account.json" ]; then
             echo "✅ Service account file exists"
@@ -83,18 +84,24 @@ jobs:
           else
             echo "❌ Service account file does NOT exist"
           fi
-          
+
       - name: Generate application key
         run: php artisan key:generate --ansi
-        
+
       - name: Clear and cache config
         run: |
           php artisan config:clear
           php artisan config:cache
-          
+
       - name: Run spreadsheet crawling
         run: php artisan crawl:sheets
-        
+
+      - name: Wait between operations
+        run: sleep 10
+
+      - name: Run raid status check
+        run: php artisan raid:check
+
       - name: Upload logs (if exists)
         if: always()
         uses: actions/upload-artifact@v4
