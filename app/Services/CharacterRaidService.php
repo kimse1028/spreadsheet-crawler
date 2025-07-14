@@ -132,12 +132,12 @@ class CharacterRaidService
                     if ($cleared) {
                         $results['cleared']++;
                         $this->output("      ✅ {$characterName} - 클리어 확인!");
-
-                        // 컨텐츠 현황 시트 업데이트
-                        $this->updateContentSheet($characterName, true);
                     } else {
                         $this->output("      ❌ {$characterName} - 미클리어");
                     }
+
+                    // 항상 컨텐츠 현황 시트 업데이트
+                    $this->updateContentSheet($characterName, $cleared);
 
                     // 캐릭터 간 대기 (API 제한 고려)
                     sleep(1);
@@ -233,47 +233,62 @@ class CharacterRaidService
         try {
             $contentSheetName = '컨텐츠 현황';
 
-            // 1. 전체 시트 데이터 읽기 (A:Z 범위 정도)
-            $allData = $this->sheetsService->readRange($contentSheetName, 'A:Z');
+            // 1. 전체 시트에서 캐릭터명 찾기 (A~Z 범위)
+            $allData = $this->sheetsService->readRange($contentSheetName, 'A1:Z100');
 
-            // 2. 캐릭터명으로 행 찾기
             $targetRow = null;
+            $characterColumn = null;
+
             foreach ($allData as $rowIndex => $row) {
-                if (isset($row[0]) && trim($row[0]) === $characterName) {
-                    $targetRow = $rowIndex + 1; // 1-based index
-                    break;
+                foreach ($row as $colIndex => $cellValue) {
+                    if (isset($cellValue) && trim($cellValue) === $characterName) {
+                        $targetRow = $rowIndex + 1; // 1-based index
+                        $characterColumn = $colIndex; // 0-based index
+                        break 2; // 두 중첩 루프 모두 탈출
+                    }
                 }
             }
 
-            if (!$targetRow) {
-                Log::warning('캐릭터를 찾을 수 없음', ['character' => $characterName]);
+            if (!$targetRow || $characterColumn === null) {
+                Log::warning('컨텐츠 현황 시트에서 캐릭터를 찾을 수 없음', [
+                    'character' => $characterName
+                ]);
                 return;
             }
 
-            // 3. 해당 행에서 첫 번째 체크박스 찾기
+            // 2. 해당 행에서 체크박스 찾기 (캐릭터명 오른쪽부터)
             $rowData = $allData[$targetRow - 1];
-            $checkboxColumn = null;
+            $checkboxCount = 0;
+            $nabalColumnIndex = null;
 
-            for ($col = 1; $col < count($rowData); $col++) { // A열 제외하고 스캔
+            // 캐릭터명 다음 칸부터 스캔
+            for ($col = $characterColumn + 1; $col < count($rowData); $col++) {
                 $cellValue = $rowData[$col] ?? '';
-                // 체크박스는 보통 TRUE/FALSE 또는 빈값
+
+                // 체크박스 판별 (TRUE/FALSE/빈값이면 체크박스로 간주)
                 if ($cellValue === 'TRUE' || $cellValue === 'FALSE' || $cellValue === '') {
-                    $checkboxColumn = $this->numberToColumnLetter($col + 1);
-                    break;
+                    $checkboxCount++;
+
+                    // 세 번째 체크박스가 나벨!
+                    if ($checkboxCount === 3) {
+                        $nabalColumnIndex = $col;
+                        break;
+                    }
                 }
             }
 
-            if (!$checkboxColumn) {
-                Log::warning('체크박스를 찾을 수 없음', [
+            if ($nabalColumnIndex === null) {
+                Log::warning('나벨 체크박스를 찾을 수 없음', [
                     'character' => $characterName,
                     'row' => $targetRow
                 ]);
                 return;
             }
 
-            // 4. 체크박스 업데이트
-            $cell = $checkboxColumn . $targetRow;
-            $value = $cleared ? 'TRUE' : 'FALSE';
+            // 3. 체크박스 업데이트
+            $nabalColumn = $this->numberToColumnLetter($nabalColumnIndex + 1); // 1-based
+            $cell = $nabalColumn . $targetRow;
+            $value = $cleared; // boolean 값으로 설정
 
             $this->sheetsService->writeCell($contentSheetName, $cell, $value);
 
