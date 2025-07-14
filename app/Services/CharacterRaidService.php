@@ -119,25 +119,34 @@ class CharacterRaidService
                 $this->output("      🔍 {$characterName} 체크 중...");
 
                 try {
-                    $cleared = $this->neopleApi->checkNabalRaidClear($serverId, $characterName);
+                    $raidStatus = $this->neopleApi->checkAllRaids($serverId, $characterName);
 
                     $results['details'][$rowIndex] = [
                         'character' => $characterName,
-                        'cleared' => $cleared,
+                        'raidStatus' => $raidStatus,
                         'success' => true
                     ];
 
                     $results['checked']++;
 
-                    if ($cleared) {
+                    // 클리어 상태 출력 및 카운트
+                    $clearMessages = [];
+                    if ($raidStatus['venus']) {
+                        $clearMessages[] = '베누스';
+                    }
+                    if ($raidStatus['nabal']) {
+                        $clearMessages[] = '나벨';
+                    }
+
+                    if (!empty($clearMessages)) {
                         $results['cleared']++;
-                        $this->output("      ✅ {$characterName} - 클리어 확인!");
+                        $this->output("      ✅ {$characterName} - " . implode(', ', $clearMessages) . " 클리어!");
                     } else {
                         $this->output("      ❌ {$characterName} - 미클리어");
                     }
 
                     // 항상 컨텐츠 현황 시트 업데이트
-                    $this->updateContentSheet($characterName, $cleared);
+                    $this->updateAllRaidStatus($characterName, $raidStatus);
 
                     // 캐릭터 간 대기 (API 제한 고려)
                     sleep(1);
@@ -226,9 +235,10 @@ class CharacterRaidService
     }
 
     /**
-     * 컨텐츠 현황 시트 업데이트
+     * 모든 레이드 상태를 컨텐츠 현황 시트에 업데이트
+     * 클리어 기록이 있으면 체크, 없으면 아무것도 체크 안함
      */
-    private function updateContentSheet(string $characterName, bool $cleared): void
+    private function updateAllRaidStatus(string $characterName, array $raidStatus): void
     {
         try {
             $contentSheetName = '컨텐츠 현황';
@@ -256,10 +266,10 @@ class CharacterRaidService
                 return;
             }
 
-            // 2. 해당 행에서 체크박스 찾기 (캐릭터명 오른쪽부터)
+            // 2. 해당 행에서 체크박스들 찾기 (캐릭터명 오른쪽부터)
             $rowData = $allData[$targetRow - 1];
             $checkboxCount = 0;
-            $nabalColumnIndex = null;
+            $checkboxPositions = [];
 
             // 캐릭터명 다음 칸부터 스캔
             for ($col = $characterColumn + 1; $col < count($rowData); $col++) {
@@ -268,35 +278,51 @@ class CharacterRaidService
                 // 체크박스 판별 (TRUE/FALSE/빈값이면 체크박스로 간주)
                 if ($cellValue === 'TRUE' || $cellValue === 'FALSE' || $cellValue === '') {
                     $checkboxCount++;
+                    $checkboxPositions[$checkboxCount] = $col;
 
-                    // 세 번째 체크박스가 나벨!
-                    if ($checkboxCount === 3) {
-                        $nabalColumnIndex = $col;
+                    // 1번째, 2번째, 3번째 체크박스만 필요
+                    if ($checkboxCount >= 3) {
                         break;
                     }
                 }
             }
 
-            if ($nabalColumnIndex === null) {
-                Log::warning('나벨 체크박스를 찾을 수 없음', [
-                    'character' => $characterName,
-                    'row' => $targetRow
-                ]);
-                return;
+            // 3. 클리어 기록이 있는 레이드만 체크박스 업데이트
+            $updates = [];
+
+            // 상급던전 (1번째 체크박스) - 제거됨, 업데이트 안함
+
+            // 베누스 (2번째 체크박스) - 클리어했을 때만 TRUE 설정
+            if (isset($checkboxPositions[2]) && $raidStatus['venus']) {
+                $venusColumn = $this->numberToColumnLetter($checkboxPositions[2] + 1);
+                $venusCell = $venusColumn . $targetRow;
+                $updates[$venusCell] = true;
             }
 
-            // 3. 체크박스 업데이트
-            $nabalColumn = $this->numberToColumnLetter($nabalColumnIndex + 1); // 1-based
-            $cell = $nabalColumn . $targetRow;
-            $value = $cleared; // boolean 값으로 설정
+            // 나벨 (3번째 체크박스) - 클리어했을 때만 TRUE 설정
+            if (isset($checkboxPositions[3]) && $raidStatus['nabal']) {
+                $nabalColumn = $this->numberToColumnLetter($checkboxPositions[3] + 1);
+                $nabalCell = $nabalColumn . $targetRow;
+                $updates[$nabalCell] = true;
+            }
 
-            $this->sheetsService->writeCell($contentSheetName, $cell, $value);
+            // 한 번에 모든 셀 업데이트 (클리어된 것만 업데이트됨)
+            if (!empty($updates)) {
+                foreach ($updates as $cell => $value) {
+                    $this->sheetsService->writeCell($contentSheetName, $cell, $value);
+                }
 
-            Log::info('나벨 레이드 체크박스 업데이트', [
-                'character' => $characterName,
-                'cell' => $cell,
-                'value' => $value
-            ]);
+                Log::info('레이드 체크박스 업데이트 (클리어된 항목만)', [
+                    'character' => $characterName,
+                    'updates' => $updates,
+                    'raidStatus' => $raidStatus
+                ]);
+            } else {
+                Log::info('레이드 체크박스 업데이트 없음 (클리어 기록 없음)', [
+                    'character' => $characterName,
+                    'raidStatus' => $raidStatus
+                ]);
+            }
 
         } catch (Exception $e) {
             Log::error('컨텐츠 현황 시트 업데이트 실패', [
@@ -304,6 +330,18 @@ class CharacterRaidService
                 'error' => $e->getMessage()
             ]);
         }
+    }
+
+    /**
+     * 컨텐츠 현황 시트 업데이트 (기존 호환성 유지)
+     */
+    private function updateContentSheet(string $characterName, bool $cleared): void
+    {
+        $raidStatus = [
+            'venus' => false,
+            'nabal' => $cleared
+        ];
+        $this->updateAllRaidStatus($characterName, $raidStatus);
     }
 
     private function numberToColumnLetter(int $num): string

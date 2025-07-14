@@ -109,9 +109,9 @@ class NeopleApiService
     }
 
     /**
-     * 나벨 레이드 클리어 여부 확인
+     * 모든 레이드 클리어 여부 확인 (보상 기록도 포함)
      */
-    public function checkNabalRaidClear(string $serverId, string $characterName): bool
+    public function checkAllRaids(string $serverId, string $characterName): array
     {
         try {
             // 1. 캐릭터 검색
@@ -122,7 +122,10 @@ class NeopleApiService
                     'server' => $serverId,
                     'character' => $characterName
                 ]);
-                return false;
+                return [
+                    'venus' => false,
+                    'nabal' => false
+                ];
             }
 
             // 2. 첫 번째 매칭 캐릭터 사용
@@ -133,20 +136,25 @@ class NeopleApiService
             $timeline = $this->getCharacterTimeline($serverId, $characterId);
 
             if (empty($timeline)) {
-                return false;
+                return [
+                    'venus' => false,
+                    'nabal' => false
+                ];
             }
 
             // 타임라인 데이터 로깅 추가
-            if (!empty($timeline)) {
-                Log::info('타임라인 데이터', [
-                    'character' => $characterName,
-                    'timeline_count' => count($timeline),
-                    'recent_activities' => array_slice($timeline, 0, 5) // 최근 5개만
-                ]);
-            }
+            Log::info('타임라인 데이터', [
+                'character' => $characterName,
+                'timeline_count' => count($timeline),
+                'recent_activities' => array_slice($timeline, 0, 5) // 최근 5개만
+            ]);
 
-            // 4. 나벨 레이드 클리어 확인 (최근 7일)
+            // 4. 레이드 클리어 확인 (최근 7일)
             $weekAgo = now()->subDays(7);
+            $raidStatus = [
+                'venus' => false,
+                'nabal' => false
+            ];
 
             foreach ($timeline as $activity) {
                 $activityDate = \Carbon\Carbon::parse($activity['date']);
@@ -155,44 +163,103 @@ class NeopleApiService
                     continue;
                 }
 
+                // 베누스 레이드 체크 (직접 클리어만)
+                if ($this->isVenusRaidActivity($activity)) {
+                    $raidStatus['venus'] = true;
+                    Log::info('베누스 레이드 클리어 확인', [
+                        'server' => $serverId,
+                        'character' => $characterName,
+                        'date' => $activity['date'],
+                        'type' => '직접클리어',
+                        'data' => $activity['data'] ?? []
+                    ]);
+                }
+
+                // 나벨 레이드 체크 (직접 클리어 + 보상)
                 if ($this->isNabalRaidActivity($activity)) {
+                    $raidStatus['nabal'] = true;
                     Log::info('나벨 레이드 클리어 확인', [
                         'server' => $serverId,
                         'character' => $characterName,
                         'date' => $activity['date'],
-                        'raidName' => $activity['data']['raidName'] ?? ''
+                        'type' => $activity['code'] === 201 ? '직접클리어' : '보상인정',
+                        'data' => $activity['data'] ?? []
                     ]);
-                    return true;
                 }
             }
 
-            return false;
+            return $raidStatus;
 
         } catch (Exception $e) {
-            Log::error('나벨 레이드 체크 에러', [
+            Log::error('레이드 체크 에러', [
                 'server' => $serverId,
                 'character' => $characterName,
                 'error' => $e->getMessage()
             ]);
-            return false;
+            return [
+                'venus' => false,
+                'nabal' => false
+            ];
         }
     }
 
     /**
-     * 나벨 레이드 활동인지 확인
+     * 나벨 레이드 클리어 여부 확인 (기존 호환성 유지)
+     */
+    public function checkNabalRaidClear(string $serverId, string $characterName): bool
+    {
+        $raidStatus = $this->checkAllRaids($serverId, $characterName);
+        return $raidStatus['nabal'];
+    }
+
+    /**
+     * 베누스 레이드 활동인지 확인 (직접 클리어만)
+     */
+    private function isVenusRaidActivity(array $activity): bool
+    {
+        $code = $activity['code'] ?? '';
+
+        // 레기온 클리어 직접 체크만
+        if ($code === 209) {
+            $regionName = $activity['data']['regionName'] ?? '';
+            $regionNameLower = strtolower($regionName);
+            return str_contains($regionNameLower, '베누스') ||
+                   str_contains($regionNameLower, 'venus');
+        }
+
+        // 보상 인정 제거
+        return false;
+    }
+
+    /**
+     * 나벨 레이드 활동인지 확인 (직접 클리어 + 보상 인정)
      */
     private function isNabalRaidActivity(array $activity): bool
     {
-        // 레이드 코드 확인 (201 = 레이드)
-        if (($activity['code'] ?? '') !== 201) {
-            return false;
+        $code = $activity['code'] ?? '';
+
+        // 1. 레이드 클리어 직접 체크
+        if ($code === 201) {
+            $raidName = $activity['data']['raidName'] ?? '';
+            $raidNameLower = strtolower($raidName);
+            return str_contains($raidNameLower, '나벨') ||
+                   str_contains($raidNameLower, 'nabal');
         }
 
-        // raidName에서 나벨 키워드 확인
-        $raidName = $activity['data']['raidName'] ?? '';
-        $raidNameLower = strtolower($raidName);
+        // 2. 레이드 카드 보상으로 나벨 클리어 인정
+        if ($code === 507) {
+            return $this->isNabalRewardItem($activity);
+        }
 
-        return str_contains($raidNameLower, '나벨') ||
-            str_contains($raidNameLower, 'nabal');
+        return false;
+    }
+
+    /**
+     * 나벨 보상 아이템인지 확인
+     */
+    private function isNabalRewardItem(array $activity): bool
+    {
+        // code: 507은 모두 나벨 레이드 카드 보상
+        return true;
     }
 }
