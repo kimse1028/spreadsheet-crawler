@@ -27,12 +27,16 @@ class NeopleApiService
         try {
             $url = "{$this->baseUrl}/{$this->version}/servers/{$serverId}/characters";
 
-            // API 호출 전 로그 추가
+            // API 호출 전 로그 추가 (더 자세히)
             Log::info('캐릭터 검색 시작', [
                 'url' => $url,
                 'server' => $serverId,
                 'character' => $characterName,
-                'encoded_character' => urlencode($characterName)
+                'encoded_character' => urlencode($characterName),
+                'api_key_set' => !empty($this->apiKey),
+                'api_key_length' => strlen($this->apiKey ?? ''),
+                'base_url' => $this->baseUrl,
+                'version' => $this->version
             ]);
 
             $encodedCharacterName = urlencode($characterName);
@@ -45,11 +49,16 @@ class NeopleApiService
             // API 응답 로그 추가
             Log::info('API 응답', [
                 'status' => $response->status(),
-                'response_body' => $response->body()
+                'response_body' => $response->body(),
+                'headers' => $response->headers()
             ]);
 
             if ($response->successful()) {
                 $data = $response->json();
+                Log::info('캐릭터 검색 성공', [
+                    'character_count' => count($data['rows'] ?? []),
+                    'data' => $data
+                ]);
                 return $data['rows'] ?? null;
             }
 
@@ -57,7 +66,8 @@ class NeopleApiService
                 'server' => $serverId,
                 'character' => $characterName,
                 'status' => $response->status(),
-                'response' => $response->body()
+                'response' => $response->body(),
+                'full_url' => $fullUrl
             ]);
 
             return null;
@@ -66,7 +76,8 @@ class NeopleApiService
             Log::error('캐릭터 검색 에러', [
                 'server' => $serverId,
                 'character' => $characterName,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
             return null;
         }

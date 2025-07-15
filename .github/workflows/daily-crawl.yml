@@ -100,7 +100,14 @@ jobs:
         run: sleep 10
 
       - name: Run raid status check
-        run: php artisan raid:check
+        run: |
+          echo "=== 레이드 체크 시작 ==="
+          echo "현재 시간: $(date)"
+          echo "타임존: $(timedatectl show --property=Timezone --value 2>/dev/null || echo 'N/A')"
+          echo "환경변수 체크:"
+          echo "- NEOPLE_API_KEY 설정됨: $([ -n "$NEOPLE_API_KEY" ] && echo 'YES' || echo 'NO')"
+          echo "========================"
+          php artisan raid:check -v
 
       - name: Upload logs (if exists)
         if: always()
