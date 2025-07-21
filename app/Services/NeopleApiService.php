@@ -160,8 +160,8 @@ class NeopleApiService
                 'recent_activities' => array_slice($timeline, 0, 5) // 최근 5개만
             ]);
 
-            // 4. 레이드 클리어 확인 (최근 7일)
-            $weekAgo = now()->subDays(7);
+            // 4. 레이드 클리어 확인 (최근 목요일 ~ 다음 주 수요일)
+            $startOfWeek = now()->startOfWeek(\Carbon\Carbon::THURSDAY)->startOfDay();
             $raidStatus = [
                 'venus' => false,
                 'nabal' => false
@@ -170,7 +170,7 @@ class NeopleApiService
             foreach ($timeline as $activity) {
                 $activityDate = \Carbon\Carbon::parse($activity['date']);
 
-                if ($activityDate->lt($weekAgo)) {
+                if ($activityDate->lt($startOfWeek)) {
                     continue;
                 }
 
