@@ -1,8 +1,8 @@
 name: Daily Spreadsheet Crawl & Raid Check
 on:
-  # schedule:
-  #   # 00:00 (자정)
-  #   - cron: '0 15 * * *'
+  schedule:
+    # 00:00 (자정)
+    - cron: '0 15 * * *'
   workflow_dispatch:  # 수동 실행도 가능
 
 jobs:
